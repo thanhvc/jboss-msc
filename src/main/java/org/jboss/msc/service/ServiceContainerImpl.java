@@ -29,7 +29,12 @@ import org.jboss.msc.value.ImmediateValue;
 import org.jboss.msc.value.Value;
 import org.jboss.msc.value.Values;
 
+import java.io.FileNotFoundException;
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.io.OutputStreamWriter;
 import java.io.PrintStream;
+import java.io.Writer;
 import java.security.AccessController;
 import java.security.PrivilegedAction;
 import java.util.HashSet;
@@ -52,6 +57,19 @@ final class ServiceContainerImpl implements ServiceContainer {
     final ServiceControllerImpl<ServiceContainer> root;
 
     static final ServiceName ROOT = ServiceName.of("ROOT");
+
+    static final String PROFILE_OUTPUT;
+
+    static {
+        PROFILE_OUTPUT = AccessController.doPrivileged(new PrivilegedAction<String>() {
+            public String run() {
+                return System.getProperty("jboss.msc.profile.output");
+            }
+        });
+        System.out.println("PROFILE_OUTPUT = " + PROFILE_OUTPUT);
+    }
+
+    private final long start = System.nanoTime();
 
     private static final class ExecutorHolder {
         private static final Executor VALUE;
@@ -125,6 +143,8 @@ final class ServiceContainerImpl implements ServiceContainer {
         }
     }
 
+    private final Writer profileOutput;
+
     private volatile Executor executor;
 
     ServiceContainerImpl() {
@@ -137,6 +157,14 @@ final class ServiceContainerImpl implements ServiceContainer {
                 }
 
                 public void stop(final StopContext context) {
+                    final Writer profileOutput = ServiceContainerImpl.this.profileOutput;
+                    if (profileOutput != null) {
+                        try {
+                            profileOutput.close();
+                        } catch (IOException e) {
+                            e.printStackTrace();
+                        }
+                    }
                 }
 
                 public ServiceContainer getValue() throws IllegalStateException {
@@ -153,6 +181,23 @@ final class ServiceContainerImpl implements ServiceContainer {
                 }));
             }
         }
+        Writer profileOutput = null;
+        if (PROFILE_OUTPUT != null) {
+            try {
+                profileOutput = new OutputStreamWriter(new FileOutputStream(PROFILE_OUTPUT));
+            } catch (FileNotFoundException e) {
+                // ignore
+            }
+        }
+        this.profileOutput = profileOutput;
+    }
+
+    Writer getProfileOutput() {
+        return profileOutput;
+    }
+
+    long getStart() {
+        return start;
     }
 
     public <T> ServiceBuilderImpl<T> buildService(final Value<? extends Service<? extends T>> service) {
